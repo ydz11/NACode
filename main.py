@@ -46,17 +46,6 @@ RATING_THRESHOLD = 4
 MAX_HISTORY_LEN = 300
 MIN_USER_INTERACTIONS = 10
 MIN_ITEM_INTERACTIONS = 5
-GRID = {
-    "factor": [8,16,32],
-    "lr": [1e-4, 5e-4],
-    "dropout": [0.8,0.2,0.4],
-    "sasrec_num_neg": [5],
-    "neighbor_k": [10],
-    "num_layers": [2,3],
-    "l2": [1e-3, 5e-4],
-}
-
-
 def train_rating_model(
     model,
     train_dataset,
@@ -429,30 +418,39 @@ def main():
     MODEL_CONFIGS = {
 
         "MF": {
-            "factor": [16, 32, 64],
-            "lr": [1e-3],
-            "l2": [1e-3],
+            "factor": [32],
+            "lr": [0.1],
+            "l2": [0.0],
         },
 
         "NCF": {
-            "factor": [16, 32, 64],
-            "num_layers": [2],
+            "factor": [32],
+            "num_layers": [3],
+            "dropout": [0.0],
             "lr": [1e-3],
             "l2": [1e-3],
         },
 
         "SASRec-NCF": {
-            "factor": [16, 32, 64],
-            "sasrec_num_neg": [1],
+            "sasrec_hidden_units": [16, 32, 64],
+            "sasrec_num_neg": [1, 3, 5],
+            "sasrec_lr": [1e-3, 5e-4],
+            "sasrec_dropout": [0.1, 0.2, 0.4],
+            "sasrec_num_blocks": [1, 2],
+            "sasrec_num_heads": [1, 2],
             "num_layers": [2],
             "lr": [1e-3],
             "l2": [1e-3],
         },
 
        "NeighborAware": {
-            "factor": [16, 32, 64],
+            "sasrec_hidden_units": [16, 32, 64],
             "neighbor_k": [5, 10, 20],
-            "sasrec_num_neg": [1],
+            "sasrec_num_neg": [1, 3, 5],
+            "sasrec_lr": [1e-3, 5e-4],
+            "sasrec_dropout": [0.1, 0.2, 0.4],
+            "sasrec_num_blocks": [1, 2],
+            "sasrec_num_heads": [1, 2],
             "hidden_factor": [1.0],
             "num_layers": [2],
             "dropout": [0.2, 0.9],
@@ -517,6 +515,9 @@ def main():
             print(config)
             print("-" * 80)
 
+            if "factor" not in config and "sasrec_hidden_units" in config:
+                config["factor"] = config["sasrec_hidden_units"]
+
             factor = config["factor"]
 
             # =====================================================
@@ -529,8 +530,12 @@ def main():
             if model_name in ["SASRec-NCF", "NeighborAware"]:
 
                 sasrec_key = (
-                    factor,
+                    config["sasrec_hidden_units"],
                     config["sasrec_num_neg"],
+                    config["sasrec_lr"],
+                    config["sasrec_dropout"],
+                    config["sasrec_num_blocks"],
+                    config["sasrec_num_heads"],
                 )
 
                 if sasrec_key not in sasrec_cache:
@@ -553,13 +558,13 @@ def main():
                         n_users=n_users,
                         n_items=n_items,
                         device=DEVICE,
-                        hidden_units=factor,
+                        hidden_units=config["sasrec_hidden_units"],
                         max_len=SASREC_MAXLEN,
-                        num_blocks=2,
-                        num_heads=1,
-                        dropout_rate=0.2,
+                        num_blocks=config["sasrec_num_blocks"],
+                        num_heads=config["sasrec_num_heads"],
+                        dropout_rate=config["sasrec_dropout"],
                         batch_size=SASREC_BATCH_SIZE,
-                        lr=1e-3,
+                        lr=config["sasrec_lr"],
                         epochs=SASREC_EPOCHS,
                     )
 
