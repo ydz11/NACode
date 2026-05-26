@@ -177,6 +177,27 @@ def train_rating_model(
     return model, best_val_mse
 
 
+def evaluate_rating_mse(model, rating_dataset, device):
+    model.eval()
+    loader = DataLoader(
+        rating_dataset,
+        batch_size=TRAIN_BATCH_SIZE,
+        shuffle=False,
+    )
+    loss_fn = torch.nn.MSELoss()
+    mse_values = []
+
+    with torch.no_grad():
+        for user, item, rating in loader:
+            user = user.to(device)
+            item = item.to(device)
+            rating = rating.to(device).view(-1)
+            pred = model(user, item).view(-1)
+            mse_values.append(loss_fn(pred, rating).item())
+
+    return float(np.mean(mse_values)) if mse_values else 0.0
+
+
 def plot_results(results, save_dir):
     
     save_dir = Path(save_dir)
@@ -185,7 +206,11 @@ def plot_results(results, save_dir):
 
     factors = sorted(results.keys())
 
-    model_names = list(next(iter(results.values())).keys())
+    model_names = sorted({
+        name
+        for factor_results in results.values()
+        for name in factor_results.keys()
+    })
 
     # =====================================================
     # NDCG
@@ -195,9 +220,11 @@ def plot_results(results, save_dir):
 
     for name in model_names:
 
+        plot_factors = [f for f in factors if name in results[f]]
+
         plt.plot(
-            factors,
-            [results[f][name]["ndcg"] for f in factors],
+            plot_factors,
+            [results[f][name]["ndcg"] for f in plot_factors],
             marker="o",
             label=name
         )
@@ -227,9 +254,11 @@ def plot_results(results, save_dir):
 
     for name in model_names:
 
+        plot_factors = [f for f in factors if name in results[f]]
+
         plt.plot(
-            factors,
-            [results[f][name]["hr"] for f in factors],
+            plot_factors,
+            [results[f][name]["hr"] for f in plot_factors],
             marker="o",
             label=name
         )
@@ -251,11 +280,39 @@ def plot_results(results, save_dir):
 
     plt.close()
 
+    # =====================================================
+    # MSE
+    # =====================================================
 
-    """
-    The main function performs a grid search for hyperparameter tuning on multiple recommendation models
-    and evaluates their performance using various metrics.
-    """
+    plt.figure(figsize=(8, 5))
+
+    for name in model_names:
+
+        plot_factors = [f for f in factors if name in results[f]]
+
+        plt.plot(
+            plot_factors,
+            [results[f][name]["mse"] for f in plot_factors],
+            marker="o",
+            label=name
+        )
+
+    plt.xlabel("Factor")
+
+    plt.ylabel("Test MSE")
+
+    plt.title("Test MSE Comparison across Factors")
+
+    plt.legend()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        save_dir / "mse_compare.png",
+        dpi=200
+    )
+
+    plt.close()
 
 
 from itertools import product as grid_product
@@ -356,6 +413,7 @@ def main():
     train_dataset = RatingTrainDataset(train_df)
 
     valid_rating_dataset = RatingTrainDataset(valid_df)
+    test_rating_dataset = RatingTrainDataset(test_df)
 
     user_history = {}
 
@@ -671,6 +729,11 @@ def main():
             valid_hr = valid_metrics[TOP_K]["hr"]
             valid_ndcg = valid_metrics[TOP_K]["ndcg"]
 
+            test_mse = evaluate_rating_mse(
+                trained_model,
+                test_rating_dataset,
+                DEVICE,
+            )
             test_hr = test_metrics[TOP_K]["hr"]
             test_ndcg = test_metrics[TOP_K]["ndcg"]
 
@@ -685,6 +748,7 @@ def main():
                 **config,
 
                 "valid_mse": val_mse,
+                "test_mse": test_mse,
 
                 "valid_metrics": valid_metrics,
                 "test_metrics": test_metrics,
@@ -719,6 +783,7 @@ def main():
             print(f"NDCG@{TOP_K}   : {valid_ndcg:.4f}")
 
             print("\n[Test]")
+            print(f"MSE       : {test_mse:.6f}")
             print(f"HR@{TOP_K}     : {test_hr:.4f}")
             print(f"NDCG@{TOP_K}   : {test_ndcg:.4f}")
 
@@ -794,6 +859,7 @@ def main():
             all_results[factor][model_name] = {
                 "hr": row["test_hr"],
                 "ndcg": row["test_ndcg"],
+                "mse": row["test_mse"],
             }
 
     with open(
@@ -828,6 +894,8 @@ def main():
             print(f"{k:<20}: {v}")
 
         print("\nDetailed Metrics")
+        print(f"Valid MSE: {best['valid_mse']:.6f}")
+        print(f"Test MSE : {best['test_mse']:.6f}")
         print(
             f"{'K':<6}"
             f"{'Valid HR':<12}"
