@@ -476,16 +476,16 @@ def main():
     MODEL_CONFIGS = {
 
         "MF": {
-            "factor": [32],
-            "lr": [0.1],
-            "l2": [0.0],
+            "factor": [20, 40, 60, 80, 100],
+            "lr": [1e-3],
+            "l2": [1e-4, 1e-3, 1e-2],
         },
 
         "NCF": {
-            "factor": [32],
-            "num_layers": [3],
+            "factor": [8, 16, 32, 64],
+            "num_layers": [1, 2, 3, 4],
             "dropout": [0.0],
-            "lr": [1e-3],
+            "lr": [1e-4, 5e-4, 1e-3, 5e-3],
             "l2": [1e-3],
         },
 
