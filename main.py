@@ -476,33 +476,34 @@ def main():
     MODEL_CONFIGS = {
 
         "MF": {
-            "factor": [20, 40, 60, 80, 100],
-            "lr": [1e-3],
-            "l2": [1e-4, 1e-3, 1e-2],
+            "factor": [8, 16, 32, 64],
+            "lr": [1e-4, 5e-4, 1e-3],
+            "l2": [1e-3],
         },
 
         "NCF": {
             "factor": [8, 16, 32, 64],
-            "num_layers": [1, 2, 3, 4],
+            "num_layers": [4],
             "dropout": [0.0],
-            "lr": [1e-4, 5e-4, 1e-3, 5e-3],
+            "num_neg": [9],
+            "lr": [1e-3],
             "l2": [1e-3],
         },
 
         "SASRec-NCF": {
-            "sasrec_hidden_units": [16, 32, 64],
+            "factor": [8, 16, 32, 64],
             "sasrec_num_neg": [1, 3, 5],
             "sasrec_lr": [1e-3, 5e-4],
             "sasrec_dropout": [0.1, 0.2, 0.4],
             "sasrec_num_blocks": [1, 2],
             "sasrec_num_heads": [1, 2],
-            "num_layers": [2],
+            "num_layers": [4],
             "lr": [1e-3],
             "l2": [1e-3],
         },
 
        "NeighborAware": {
-            "sasrec_hidden_units": [16, 32, 64],
+            "factor": [8, 16, 32, 64],
             "neighbor_k": [5, 10, 20],
             "sasrec_num_neg": [1, 3, 5],
             "sasrec_lr": [1e-3, 5e-4],
@@ -510,10 +511,10 @@ def main():
             "sasrec_num_blocks": [1, 2],
             "sasrec_num_heads": [1, 2],
             "hidden_factor": [1.0],
-            "num_layers": [2],
+            "num_layers": [4],
             "dropout": [0.2, 0.9],
             "lr": [1e-3],
-            "l2": [1e-3,5e-3],
+            "l2": [1e-3, 5e-3],
         }
     }
 
@@ -573,9 +574,6 @@ def main():
             print(config)
             print("-" * 80)
 
-            if "factor" not in config and "sasrec_hidden_units" in config:
-                config["factor"] = config["sasrec_hidden_units"]
-
             factor = config["factor"]
 
             # =====================================================
@@ -588,7 +586,7 @@ def main():
             if model_name in ["SASRec-NCF", "NeighborAware"]:
 
                 sasrec_key = (
-                    config["sasrec_hidden_units"],
+                    factor,
                     config["sasrec_num_neg"],
                     config["sasrec_lr"],
                     config["sasrec_dropout"],
@@ -616,7 +614,7 @@ def main():
                         n_users=n_users,
                         n_items=n_items,
                         device=DEVICE,
-                        hidden_units=config["sasrec_hidden_units"],
+                        hidden_units=factor,
                         max_len=SASREC_MAXLEN,
                         num_blocks=config["sasrec_num_blocks"],
                         num_heads=config["sasrec_num_heads"],
