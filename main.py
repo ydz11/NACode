@@ -46,17 +46,6 @@ RATING_THRESHOLD = 4
 MAX_HISTORY_LEN = 300
 MIN_USER_INTERACTIONS = 10
 MIN_ITEM_INTERACTIONS = 5
-GRID = {
-    "factor": [8,16,32],
-    "lr": [1e-4, 5e-4],
-    "dropout": [0.8,0.2,0.4],
-    "sasrec_num_neg": [5],
-    "neighbor_k": [10],
-    "num_layers": [2,3],
-    "l2": [1e-3, 5e-4],
-}
-
-
 def train_rating_model(
     model,
     train_dataset,
@@ -188,6 +177,27 @@ def train_rating_model(
     return model, best_val_mse
 
 
+def evaluate_rating_mse(model, rating_dataset, device):
+    model.eval()
+    loader = DataLoader(
+        rating_dataset,
+        batch_size=TRAIN_BATCH_SIZE,
+        shuffle=False,
+    )
+    loss_fn = torch.nn.MSELoss()
+    mse_values = []
+
+    with torch.no_grad():
+        for user, item, rating in loader:
+            user = user.to(device)
+            item = item.to(device)
+            rating = rating.to(device).view(-1)
+            pred = model(user, item).view(-1)
+            mse_values.append(loss_fn(pred, rating).item())
+
+    return float(np.mean(mse_values)) if mse_values else 0.0
+
+
 def plot_results(results, save_dir):
     
     save_dir = Path(save_dir)
@@ -196,7 +206,11 @@ def plot_results(results, save_dir):
 
     factors = sorted(results.keys())
 
-    model_names = list(next(iter(results.values())).keys())
+    model_names = sorted({
+        name
+        for factor_results in results.values()
+        for name in factor_results.keys()
+    })
 
     # =====================================================
     # NDCG
@@ -206,9 +220,11 @@ def plot_results(results, save_dir):
 
     for name in model_names:
 
+        plot_factors = [f for f in factors if name in results[f]]
+
         plt.plot(
-            factors,
-            [results[f][name]["ndcg"] for f in factors],
+            plot_factors,
+            [results[f][name]["ndcg"] for f in plot_factors],
             marker="o",
             label=name
         )
@@ -238,9 +254,11 @@ def plot_results(results, save_dir):
 
     for name in model_names:
 
+        plot_factors = [f for f in factors if name in results[f]]
+
         plt.plot(
-            factors,
-            [results[f][name]["hr"] for f in factors],
+            plot_factors,
+            [results[f][name]["hr"] for f in plot_factors],
             marker="o",
             label=name
         )
@@ -262,11 +280,39 @@ def plot_results(results, save_dir):
 
     plt.close()
 
+    # =====================================================
+    # MSE
+    # =====================================================
 
-    """
-    The main function performs a grid search for hyperparameter tuning on multiple recommendation models
-    and evaluates their performance using various metrics.
-    """
+    plt.figure(figsize=(8, 5))
+
+    for name in model_names:
+
+        plot_factors = [f for f in factors if name in results[f]]
+
+        plt.plot(
+            plot_factors,
+            [results[f][name]["mse"] for f in plot_factors],
+            marker="o",
+            label=name
+        )
+
+    plt.xlabel("Factor")
+
+    plt.ylabel("Test MSE")
+
+    plt.title("Test MSE Comparison across Factors")
+
+    plt.legend()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        save_dir / "mse_compare.png",
+        dpi=200
+    )
+
+    plt.close()
 
 
 from itertools import product as grid_product
@@ -367,6 +413,7 @@ def main():
     train_dataset = RatingTrainDataset(train_df)
 
     valid_rating_dataset = RatingTrainDataset(valid_df)
+    test_rating_dataset = RatingTrainDataset(test_df)
 
     user_history = {}
 
@@ -429,35 +476,45 @@ def main():
     MODEL_CONFIGS = {
 
         "MF": {
-            "factor": [16, 32, 64],
-            "lr": [1e-3],
+            "factor": [8, 16, 32, 64],
+            "lr": [1e-4, 5e-4, 1e-3],
             "l2": [1e-3],
         },
 
         "NCF": {
-            "factor": [16, 32, 64],
-            "num_layers": [2],
+            "factor": [8, 16, 32, 64],
+            "num_layers": [4],
+            "dropout": [0.0],
+            "num_neg": [9],
             "lr": [1e-3],
             "l2": [1e-3],
         },
 
         "SASRec-NCF": {
-            "factor": [16, 32, 64],
-            "sasrec_num_neg": [1],
-            "num_layers": [2],
+            "factor": [8, 16, 32, 64],
+            "sasrec_num_neg": [1, 3, 5],
+            "sasrec_lr": [1e-3, 5e-4],
+            "sasrec_dropout": [0.1, 0.2, 0.4],
+            "sasrec_num_blocks": [1, 2],
+            "sasrec_num_heads": [1, 2],
+            "num_layers": [4],
             "lr": [1e-3],
             "l2": [1e-3],
         },
 
        "NeighborAware": {
-            "factor": [16, 32, 64],
+            "factor": [8, 16, 32, 64],
             "neighbor_k": [5, 10, 20],
-            "sasrec_num_neg": [1],
+            "sasrec_num_neg": [1, 3, 5],
+            "sasrec_lr": [1e-3, 5e-4],
+            "sasrec_dropout": [0.1, 0.2, 0.4],
+            "sasrec_num_blocks": [1, 2],
+            "sasrec_num_heads": [1, 2],
             "hidden_factor": [1.0],
-            "num_layers": [2],
+            "num_layers": [4],
             "dropout": [0.2, 0.9],
             "lr": [1e-3],
-            "l2": [1e-3,5e-3],
+            "l2": [1e-3, 5e-3],
         }
     }
 
@@ -531,6 +588,10 @@ def main():
                 sasrec_key = (
                     factor,
                     config["sasrec_num_neg"],
+                    config["sasrec_lr"],
+                    config["sasrec_dropout"],
+                    config["sasrec_num_blocks"],
+                    config["sasrec_num_heads"],
                 )
 
                 if sasrec_key not in sasrec_cache:
@@ -555,11 +616,11 @@ def main():
                         device=DEVICE,
                         hidden_units=factor,
                         max_len=SASREC_MAXLEN,
-                        num_blocks=2,
-                        num_heads=1,
-                        dropout_rate=0.2,
+                        num_blocks=config["sasrec_num_blocks"],
+                        num_heads=config["sasrec_num_heads"],
+                        dropout_rate=config["sasrec_dropout"],
                         batch_size=SASREC_BATCH_SIZE,
-                        lr=1e-3,
+                        lr=config["sasrec_lr"],
                         epochs=SASREC_EPOCHS,
                     )
 
@@ -666,6 +727,11 @@ def main():
             valid_hr = valid_metrics[TOP_K]["hr"]
             valid_ndcg = valid_metrics[TOP_K]["ndcg"]
 
+            test_mse = evaluate_rating_mse(
+                trained_model,
+                test_rating_dataset,
+                DEVICE,
+            )
             test_hr = test_metrics[TOP_K]["hr"]
             test_ndcg = test_metrics[TOP_K]["ndcg"]
 
@@ -680,6 +746,7 @@ def main():
                 **config,
 
                 "valid_mse": val_mse,
+                "test_mse": test_mse,
 
                 "valid_metrics": valid_metrics,
                 "test_metrics": test_metrics,
@@ -714,6 +781,7 @@ def main():
             print(f"NDCG@{TOP_K}   : {valid_ndcg:.4f}")
 
             print("\n[Test]")
+            print(f"MSE       : {test_mse:.6f}")
             print(f"HR@{TOP_K}     : {test_hr:.4f}")
             print(f"NDCG@{TOP_K}   : {test_ndcg:.4f}")
 
@@ -789,6 +857,7 @@ def main():
             all_results[factor][model_name] = {
                 "hr": row["test_hr"],
                 "ndcg": row["test_ndcg"],
+                "mse": row["test_mse"],
             }
 
     with open(
@@ -823,6 +892,8 @@ def main():
             print(f"{k:<20}: {v}")
 
         print("\nDetailed Metrics")
+        print(f"Valid MSE: {best['valid_mse']:.6f}")
+        print(f"Test MSE : {best['test_mse']:.6f}")
         print(
             f"{'K':<6}"
             f"{'Valid HR':<12}"
